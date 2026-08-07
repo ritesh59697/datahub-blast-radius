@@ -93,10 +93,27 @@ def assess(radius: ColumnBlastRadius) -> Verdict:
         reasons.append(f"impact crosses {len(platforms)} platforms: {', '.join(platforms)}")
     if datasets:
         reasons.append(f"{len(datasets)} downstream tables/views derive from it")
+    # Say why this is *not* worse — a reviewer needs to trust the low ratings
+    # as much as the high ones.
+    if not dashboards and not charts and not ml and radius.hits:
+        reasons.append("no dashboards, charts, or ML models consume it")
 
+    # Severity is driven by *what* breaks, not by how many things break. In a
+    # warehouse where every table fans out to 3+ platforms, counting platforms
+    # rates everything HIGH and the tool stops discriminating.
+    #
+    #   critical - something a human reads breaks: a dashboard, or an ML model
+    #   high     - a chart breaks
+    #   medium   - only derived tables and replication jobs are affected
+    #   low      - nothing downstream depends on this column
+    #
+    # Pipeline jobs are deliberately MEDIUM, not HIGH: in this graph they are
+    # table-level replication (export_table_x_to_s3), so a column change flows
+    # through them without breaking them. Treating them as HIGH rated every
+    # column in the warehouse HIGH and made the severity meaningless.
     if dashboards or ml:
         severity = Severity.CRITICAL
-    elif charts or len(platforms) >= 4:
+    elif charts:
         severity = Severity.HIGH
     elif datasets or pipelines:
         severity = Severity.MEDIUM
@@ -104,7 +121,21 @@ def assess(radius: ColumnBlastRadius) -> Verdict:
         severity = Severity.LOW
 
     if severity is Severity.LOW:
-        headline = f"`{radius.column}` has no known downstream consumers."
+        headline = (
+            f"No downstream consumers found for `{radius.column}`. "
+            f"Safe to merge."
+        )
+    elif severity is Severity.MEDIUM:
+        parts = []
+        if datasets:
+            parts.append(f"{len(datasets)} downstream table{'s' if len(datasets) != 1 else ''}")
+        if pipelines:
+            parts.append(f"{len(pipelines)} pipeline job{'s' if len(pipelines) != 1 else ''}")
+        touched = " and ".join(parts) if parts else f"{len(radius.hits)} entities"
+        headline = (
+            f"This change touches {touched}, "
+            f"but no dashboards, charts, or ML models."
+        )
     else:
         bits = []
         if dashboards:

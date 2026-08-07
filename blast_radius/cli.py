@@ -13,7 +13,8 @@ import sys
 from pathlib import Path
 
 from .datahub_client import ColumnBlastRadius, DataHubClient, DataHubError
-from .diff_parser import ColumnChange, parse_diff
+from .diff_parser import ChangeKind, ColumnChange, parse_diff
+from .migration import generate_migration
 from .render import render_comment, render_terminal
 from .severity import Severity, assess
 from .writeback import write_verdict
@@ -51,7 +52,8 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         print("hint: run `datahub docker quickstart` first", file=sys.stderr)
         return 2
 
-    analyses: list[tuple[ColumnBlastRadius, str]] = []
+    # (radius, description, originating change if any)
+    analyses: list[tuple[ColumnBlastRadius, str, ColumnChange | None]] = []
 
     if args.column:
         if "." not in args.column:
@@ -62,7 +64,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         if not urn:
             print(f"error: no dataset found for '{table}'", file=sys.stderr)
             return 2
-        analyses.append((client.blast_radius(urn, column), f"Change {table}.{column}"))
+        analyses.append((client.blast_radius(urn, column), f"Change {table}.{column}", None))
     else:
         diff_text = (
             Path(args.diff).read_text()
@@ -78,7 +80,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
             print(f"  - {change.describe()}", file=sys.stderr)
             result = _analyze_change(client, change, args.platform)
             if result:
-                analyses.append(result)
+                analyses.append((result[0], result[1], change))
 
     if not analyses:
         print("Nothing to report — no changed columns resolved to DataHub datasets.")
@@ -86,7 +88,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 
     worst = Severity.LOW
     sections: list[str] = []
-    for radius, description in analyses:
+    for radius, description, _change in analyses:
         verdict = assess(radius)
         if verdict.severity.rank > worst.rank:
             worst = verdict.severity
@@ -98,8 +100,19 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     body = "\n\n".join(sections)
     print(body)
 
+    if args.migration:
+        out_dir = Path(args.migration)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for radius, _description, change in analyses:
+            old = radius.column
+            new = (change.new_column if change and change.kind is ChangeKind.RENAMED
+                   else f"{old}_new")
+            path = out_dir / f"migration-{radius.dataset_name}.{old}.md"
+            path.write_text(generate_migration(radius, old, new))
+            print(f"✓ migration plan: {path}", file=sys.stderr)
+
     if args.writeback:
-        for radius, description in analyses:
+        for radius, description, _change in analyses:
             try:
                 url = write_verdict(client, radius, description)
                 print(f"\n✓ verdict written to DataHub: {url}", file=sys.stderr)
@@ -108,7 +121,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 
     if args.post_pr:
         markdown = body if args.format == "markdown" else "\n\n".join(
-            render_comment(r, d, datahub_url=args.datahub_url) for r, d in analyses
+            render_comment(r, d, datahub_url=args.datahub_url) for r, d, _ in analyses
         )
         cmd = ["gh", "pr", "comment", str(args.post_pr), "--body", markdown]
         if args.repo:
@@ -146,6 +159,8 @@ def main(argv: list[str] | None = None) -> int:
     analyze.add_argument("--format", choices=["terminal", "markdown"], default="terminal")
     analyze.add_argument("--post-pr", type=int, metavar="N", help="post the report to PR #N")
     analyze.add_argument("--repo", help="owner/name, when posting outside the current repo")
+    analyze.add_argument("--migration", metavar="DIR",
+                         help="write a migration plan per changed column into DIR")
     analyze.add_argument("--writeback", action="store_true",
                          help="persist the verdict to the DataHub graph")
     analyze.add_argument("--fail-on-critical", action="store_true",
