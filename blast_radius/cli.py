@@ -20,16 +20,37 @@ from .severity import Severity, assess
 from .writeback import write_verdict
 
 
-def _resolve_dataset(client: DataHubClient, table: str, platform: str | None) -> str | None:
+def _resolve_dataset(
+    client: DataHubClient,
+    table: str,
+    platform: str | None,
+    warn: bool = True,
+) -> str | None:
     """Map a dbt model name to a DataHub dataset URN."""
     candidates = client.find_dataset(table, platform=platform)
     if not candidates:
         return None
-    # Prefer an exact leaf-name match over a fuzzy search hit.
-    for entity in candidates:
-        if entity.get("name", "").split(".")[-1].lower() == table.lower():
-            return entity["urn"]
-    return candidates[0]["urn"]
+
+    exact = [
+        e for e in candidates
+        if e.get("name", "").split(".")[-1].lower() == table.lower()
+    ]
+    pool = exact or candidates
+
+    # The same table name usually exists on several platforms (postgres source,
+    # snowflake copy, dbt model). Picking one silently changes the answer, so
+    # say which was chosen and how to disambiguate.
+    if warn and not platform and len(pool) > 1:
+        chosen = (pool[0].get("platform") or {}).get("name", "?")
+        others = sorted({
+            (e.get("platform") or {}).get("name", "?") for e in pool[1:]
+        })
+        print(
+            f"  note: '{table}' exists on {len(pool)} platforms; using "
+            f"'{chosen}'. Pass --platform to choose ({', '.join(others)}).",
+            file=sys.stderr,
+        )
+    return pool[0]["urn"]
 
 
 def _analyze_change(
@@ -64,6 +85,18 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         if not urn:
             print(f"error: no dataset found for '{table}'", file=sys.stderr)
             return 2
+
+        # "No downstream consumers" and "that column does not exist" look
+        # identical in the lineage graph, and reporting the latter as
+        # "safe to merge" would be actively misleading.
+        if client.column_exists(urn, column) is False:
+            print(f"error: '{table}' has no column '{column}'", file=sys.stderr)
+            known = client.list_columns(urn)
+            if known:
+                print(f"hint: known columns are {', '.join(known[:12])}"
+                      + (" ..." if len(known) > 12 else ""), file=sys.stderr)
+            return 2
+
         analyses.append((client.blast_radius(urn, column), f"Change {table}.{column}", None))
     else:
         diff_text = (

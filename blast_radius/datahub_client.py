@@ -317,6 +317,19 @@ class DataHubClient:
                     out[ent["urn"]] = parsed
         return out
 
+    def column_exists(self, dataset_urn: str, column: str) -> bool | None:
+        """True/False if the schema is known, None if the dataset has no schema."""
+        ds = self.get_dataset(dataset_urn)
+        schema = (ds or {}).get("schemaMetadata")
+        if not schema:
+            return None
+        return any(f["fieldPath"] == column for f in schema.get("fields", []))
+
+    def list_columns(self, dataset_urn: str) -> list[str]:
+        ds = self.get_dataset(dataset_urn)
+        schema = (ds or {}).get("schemaMetadata") or {}
+        return [f["fieldPath"] for f in schema.get("fields", [])]
+
     def blast_radius(
         self,
         dataset_urn: str,
