@@ -8,11 +8,11 @@ Traced `orders.order_id` through DataHub lineage: **29 downstream entities** acr
 
 | | Asset | Type | Platform | Hops |
 |---|---|---|---|---|
-| 🟠 | **export_table_orders_to_s3** | Pipeline job | ⚡ spark | 1 |
-| 🟠 | **import_table_orders_to_snowflake** | Pipeline job | ⚡ spark | 2 |
 | 🟠 | **Popular Products Categories** | Chart | 📈 tableau | 6 |
 | 🟠 | **Promotions** | Chart | 📈 tableau | 6 |
 | 🟠 | **Order Mode** | Chart | 📈 tableau | 6 |
+| 🟡 | **export_table_orders_to_s3** | Pipeline job | ⚡ spark | 1 |
+| 🟡 | **import_table_orders_to_snowflake** | Pipeline job | ⚡ spark | 2 |
 
 <details><summary>Plus 24 downstream tables and views (showing 12)</summary>
 

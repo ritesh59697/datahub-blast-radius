@@ -50,13 +50,16 @@ class Verdict:
 
 
 def classify_hit(hit: LineageHit) -> Severity:
-    """Severity of a single downstream entity breaking."""
-    if hit.entity_type == "DASHBOARD":
+    """Severity of a single downstream entity breaking.
+
+    Must stay consistent with ``assess`` below: a pipeline job shown as HIGH
+    inside a MEDIUM verdict reads as the tool contradicting itself.
+    """
+    if hit.entity_type in ("DASHBOARD", "MLMODEL", "MLFEATURE_TABLE", "MLFEATURE"):
         return Severity.CRITICAL
-    if hit.entity_type in ("CHART", "MLMODEL", "MLFEATURE_TABLE"):
+    if hit.entity_type == "CHART":
         return Severity.HIGH
-    if hit.is_pipeline:
-        return Severity.HIGH
+    # Replication jobs carry a renamed column through without breaking.
     return Severity.MEDIUM
 
 

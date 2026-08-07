@@ -62,16 +62,20 @@ def render_comment(
     )
     lines.append("")
 
-    # Highest-severity casualties first — this is what wins or loses attention.
-    critical = [h for h in radius.hits if classify_hit(h) is Severity.CRITICAL]
-    high = [h for h in radius.hits if classify_hit(h) is Severity.HIGH]
+    # Named, recognisable assets first — a dashboard or chart is what makes a
+    # reviewer stop. Pipeline jobs are included because a reader wants to know
+    # what has to be re-run, even though they rate MEDIUM on their own.
+    headline_hits = [
+        h for h in radius.hits
+        if h.is_bi_asset or h.is_ml_asset or h.is_pipeline
+    ]
 
-    if critical or high:
+    if headline_hits:
         lines.append("### What breaks")
         lines.append("")
         lines.append("| | Asset | Type | Platform | Hops |")
         lines.append("|---|---|---|---|---|")
-        for hit in sorted(critical + high, key=lambda h: (-classify_hit(h).rank, h.degree)):
+        for hit in sorted(headline_hits, key=lambda h: (-classify_hit(h).rank, h.degree)):
             sev = classify_hit(hit)
             label = TYPE_LABEL.get(hit.entity_type, hit.entity_type.title())
             lines.append(

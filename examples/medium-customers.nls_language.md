@@ -8,8 +8,8 @@ Traced `customers.nls_language` through DataHub lineage: **5 downstream entities
 
 | | Asset | Type | Platform | Hops |
 |---|---|---|---|---|
-| 🟠 | **export_table_customers_to_s3** | Pipeline job | ⚡ spark | 1 |
-| 🟠 | **import_table_customers_to_snowflake** | Pipeline job | ⚡ spark | 2 |
+| 🟡 | **export_table_customers_to_s3** | Pipeline job | ⚡ spark | 1 |
+| 🟡 | **import_table_customers_to_snowflake** | Pipeline job | ⚡ spark | 2 |
 
 <details><summary>Plus 3 downstream tables and views</summary>
 

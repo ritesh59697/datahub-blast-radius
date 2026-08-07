@@ -1,5 +1,5 @@
 from blast_radius.datahub_client import ColumnBlastRadius, LineageHit
-from blast_radius.severity import Severity, assess
+from blast_radius.severity import Severity, assess, classify_hit
 
 
 def hit(entity_type: str, name: str = "thing", platform: str = "dbt", degree: int = 1) -> LineageHit:
@@ -91,6 +91,31 @@ def test_medium_headline_states_the_absence_of_bi_impact():
 def test_reasons_explain_why_it_is_not_worse():
     verdict = assess(radius(hit("DATASET", "orders_staging")))
     assert any("no dashboards, charts, or ML models consume it" in r for r in verdict.reasons)
+
+
+def test_per_hit_labels_never_exceed_the_overall_verdict():
+    """A hit shown as HIGH inside a MEDIUM verdict reads as self-contradiction.
+
+    This regressed once: pipeline jobs were labelled HIGH while the verdict
+    they appeared under said MEDIUM.
+    """
+    cases = [
+        radius(hit("DATA_JOB", "export_table_x_to_s3", "spark"), hit("DATASET", "x", "s3")),
+        radius(hit("DATASET", "staging")),
+        radius(hit("CHART", "Orders by Day", "looker")),
+        radius(hit("DASHBOARD", "Exec KPIs", "looker")),
+    ]
+    for case in cases:
+        overall = assess(case).severity
+        for h in case.hits:
+            assert classify_hit(h).rank <= overall.rank, (
+                f"{h.entity_type} labelled {classify_hit(h).value} "
+                f"inside a {overall.value} verdict"
+            )
+
+
+def test_pipeline_job_hit_is_medium():
+    assert classify_hit(hit("DATA_JOB", "export", "spark")) is Severity.MEDIUM
 
 
 def test_singular_plural_agreement():

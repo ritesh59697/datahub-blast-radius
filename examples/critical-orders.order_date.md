@@ -9,10 +9,10 @@ Traced `orders.order_date` through DataHub lineage: **21 downstream entities** a
 | | Asset | Type | Platform | Hops |
 |---|---|---|---|---|
 | 🔴 | **Order Entry Dashboard** | Dashboard | 👁️ looker | 6 |
-| 🟠 | **export_table_orders_to_s3** | Pipeline job | ⚡ spark | 1 |
-| 🟠 | **import_table_orders_to_snowflake** | Pipeline job | ⚡ spark | 2 |
 | 🟠 | **Orders By Month** | Chart | 📈 tableau | 6 |
 | 🟠 | **Orders by Day** | Chart | 👁️ looker | 6 |
+| 🟡 | **export_table_orders_to_s3** | Pipeline job | ⚡ spark | 1 |
+| 🟡 | **import_table_orders_to_snowflake** | Pipeline job | ⚡ spark | 2 |
 
 <details><summary>Plus 16 downstream tables and views (showing 12)</summary>
 
