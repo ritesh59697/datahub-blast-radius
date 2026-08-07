@@ -153,6 +153,15 @@ Passed an urn of type chart to the from_string method of DatasetUrn
 That is exactly the set of columns worth analysing. Raw GraphQL against the same
 `schemaField` URN returns all results, charts included.
 
+Root cause: `_create_lineage_result` calls `DatasetUrn.from_string()` on the parent of
+every `SCHEMA_FIELD` in the returned paths, but the Tableau connector legitimately emits
+chart-parented schema fields like
+`urn:li:schemaField:(urn:li:chart:(tableau,<id>),ORDERS_COUNT)`. One unparseable entry
+discards the entire result set.
+
+Reported upstream with a reproduction and suggested fix:
+**[datahub-project/datahub#18964](https://github.com/datahub-project/datahub/issues/18964)**
+
 ## Development
 
 ```bash
