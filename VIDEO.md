@@ -10,12 +10,35 @@ everything that wins is in the first minute.
 
 ## Before you record
 
-Run this once — it resets state so the demo is repeatable:
+**Two things that will ruin a take if you skip them.**
+
+### 1. Activate the venv, or `blast-radius` is not a command
 
 ```bash
 cd "/Users/ritesh/Hackathon Projects/datahub-blast-radius"
+source .venv/bin/activate
+```
+
+Your prompt shows `(.venv)` and `blast-radius` now works as a plain command. Without
+this you get `command not found` on camera.
+
+### 2. Log into the DataHub UI *before* recording
+
+`http://localhost:9002` shows a login wall. Credentials for the local quickstart are:
+
+```
+username: datahub
+password: datahub
+```
+
+The session lasts 24 hours. Log in first, then open the Documentation tab below and
+leave it loaded — otherwise the writeback shot at 1:45 lands on a login form.
+
+### Then verify the stack
+
+```bash
 docker ps                    # all 6 DataHub containers healthy
-.venv/bin/blast-radius analyze --column orders.order_date --platform postgres
+blast-radius analyze --column orders.order_date --platform postgres
 ```
 
 Setup checklist:
