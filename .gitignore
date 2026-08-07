@@ -25,3 +25,6 @@ datahub-quickstart/
 # Demo recording scratch
 recordings/
 *.mov
+
+# pytest
+.pytest_cache/
