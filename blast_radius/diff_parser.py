@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 
 class ChangeKind(str, Enum):
@@ -46,7 +47,15 @@ _FILE_RE = re.compile(r"^\+\+\+ b/(.+)$")
 # "col AS alias", "col as alias", or a bare selected column.
 _ALIAS_RE = re.compile(r"^\s*([\w.]+)\s+as\s+(\w+)\s*,?\s*$", re.IGNORECASE)
 _BARE_COL_RE = re.compile(r"^\s*([\w.]+)\s*,?\s*$")
-_YAML_NAME_RE = re.compile(r"^\s*-?\s*name:\s*([\w]+)\s*$")
+# A changed column in schema.yml is indented under `columns:` — at least six
+# spaces in dbt's conventional layout. Shallower names are models, not columns.
+_YAML_NAME_RE = re.compile(r"^\s{5,}-?\s*name:\s*([\w]+)\s*$")
+# In a dbt schema.yml the hunk header carries the enclosing model, e.g.
+#   @@ -5,7 +5,7 @@ models:   - name: orders
+_HUNK_CONTEXT_RE = re.compile(r"^@@[^@]*@@\s*(.*)$")
+# A model entry sits directly under `models:` (shallow indent); a column entry
+# sits deeper under `columns:`. Indentation is what tells them apart.
+_YAML_MODEL_RE = re.compile(r"^(\s{0,4})-\s*name:\s*([\w]+)\s*$")
 
 
 def _table_from_path(path: str) -> str:
@@ -62,12 +71,53 @@ def _strip_qualifier(col: str) -> str:
     return col.rsplit(".", 1)[-1]
 
 
-def parse_diff(diff_text: str) -> list[ColumnChange]:
-    """Parse a unified diff into column changes."""
+def _is_yaml(path: str) -> bool:
+    return path.endswith((".yml", ".yaml"))
+
+
+def _model_for_column(path: str, column: str, repo_root: str | None) -> str | None:
+    """Find which dbt model a schema.yml column belongs to.
+
+    git only shows a few lines of context, and `- name: <model>` usually sits
+    outside that window, so the diff alone cannot say which model a changed
+    column belongs to. When the working tree is available, read the file and
+    resolve it properly instead of guessing from the filename.
+    """
+    if not repo_root:
+        return None
+    full = Path(repo_root) / path
+    if not full.is_file():
+        return None
+
+    current_model: str | None = None
+    in_columns = False
+    for raw in full.read_text().splitlines():
+        model = _YAML_MODEL_RE.match(raw)
+        if model:
+            current_model = model.group(2)
+            in_columns = False
+            continue
+        if re.match(r"^\s*columns:\s*$", raw):
+            in_columns = True
+            continue
+        if in_columns and re.match(rf"^\s*-\s*name:\s*{re.escape(column)}\s*$", raw):
+            return current_model
+    return None
+
+
+def parse_diff(diff_text: str, repo_root: str | None = None) -> list[ColumnChange]:
+    """Parse a unified diff into column changes.
+
+    ``repo_root`` lets schema.yml columns be attributed to the right dbt model
+    by reading the file; without it, the filename is used as a fallback.
+    """
     changes: list[ColumnChange] = []
     current_file = ""
     removed: list[str] = []
     added: list[str] = []
+    # For dbt schema.yml, the model being described is declared in the file,
+    # not implied by the filename.
+    yaml_model = ""
 
     def flush() -> None:
         """Pair removals with additions in one hunk to detect renames."""
@@ -76,7 +126,17 @@ def parse_diff(diff_text: str) -> list[ColumnChange]:
             removed, added = [], []
             return
 
-        table = _table_from_path(current_file)
+        resolved: str | None = None
+        if _is_yaml(current_file) and not yaml_model:
+            # The working tree holds the post-change name, so try the added
+            # column first and fall back to the removed one.
+            for probe in [*added, *removed]:
+                resolved = _model_for_column(
+                    current_file, _strip_qualifier(probe), repo_root
+                )
+                if resolved:
+                    break
+        table = yaml_model or resolved or _table_from_path(current_file)
         rem = [_strip_qualifier(c) for c in removed]
         add = [_strip_qualifier(c) for c in added]
 
@@ -110,11 +170,23 @@ def parse_diff(diff_text: str) -> list[ColumnChange]:
         if header:
             flush()
             current_file = header.group(1)
+            yaml_model = ""
             continue
 
-        if line.startswith("@@"):
+        hunk = _HUNK_CONTEXT_RE.match(line)
+        if hunk:
             flush()
+            if _is_yaml(current_file):
+                model = _YAML_MODEL_RE.match(hunk.group(1))
+                if model:
+                    yaml_model = model.group(2)
             continue
+
+        # Context lines inside a YAML hunk reveal the enclosing model.
+        if _is_yaml(current_file) and line.startswith(" "):
+            model = _YAML_MODEL_RE.match(line[1:])
+            if model:
+                yaml_model = model.group(2)
 
         if line.startswith(("+++", "---", "diff ", "index ")):
             continue
@@ -140,4 +212,13 @@ def parse_diff(diff_text: str) -> list[ColumnChange]:
     noise = {"select", "from", "where", "group", "order", "by", "with", "as",
              "join", "on", "and", "or", "case", "when", "then", "else", "end",
              "null", "not", "distinct", "limit", "having", "union", "all"}
-    return [c for c in changes if c.column.lower() not in noise]
+    kept = [c for c in changes if c.column.lower() not in noise]
+
+    # A dbt rename usually touches both the model and its schema.yml. That is
+    # one change to report, not two.
+    deduped: dict[tuple[str, str, str, str | None], ColumnChange] = {}
+    for change in kept:
+        key = (change.kind.value, change.table, change.column, change.new_column)
+        if key not in deduped:
+            deduped[key] = change
+    return list(deduped.values())

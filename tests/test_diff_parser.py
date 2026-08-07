@@ -139,6 +139,69 @@ def test_multiple_files_are_scoped_to_their_own_tables():
     assert tables["customers"].new_column == "email_address"
 
 
+def test_sql_and_yaml_rename_dedupe_to_one_change(tmp_path):
+    """A dbt rename touches the model and its schema.yml — that is one change."""
+    models = tmp_path / "models" / "marts"
+    models.mkdir(parents=True)
+    (models / "schema.yml").write_text(
+        "version: 2\n"
+        "models:\n"
+        "  - name: orders\n"
+        "    columns:\n"
+        "      - name: order_dt\n"
+        "        description: Order date.\n"
+    )
+    diff = """\
+--- a/models/marts/orders.sql
++++ b/models/marts/orders.sql
+@@ -10,7 +10,7 @@ renamed as (
+     select
+         order_id,
+-        order_date,
++        order_dt,
+         customer_id,
+--- a/models/marts/schema.yml
++++ b/models/marts/schema.yml
+@@ -9,7 +9,7 @@ models:
+           - not_null
+-      - name: order_date
++      - name: order_dt
+         description: Order date.
+"""
+    changes = parse_diff(diff, repo_root=str(tmp_path))
+    assert len(changes) == 1
+    assert changes[0].table == "orders"
+    assert changes[0].column == "order_date"
+    assert changes[0].new_column == "order_dt"
+
+
+def test_yaml_column_attributed_to_enclosing_model_not_filename(tmp_path):
+    """git context rarely includes `- name: <model>`, so read the file."""
+    models = tmp_path / "models"
+    models.mkdir(parents=True)
+    (models / "schema.yml").write_text(
+        "version: 2\n"
+        "models:\n"
+        "  - name: customers\n"
+        "    columns:\n"
+        "      - name: email_address\n"
+        "  - name: orders\n"
+        "    columns:\n"
+        "      - name: order_dt\n"
+    )
+    diff = """\
+--- a/models/schema.yml
++++ b/models/schema.yml
+@@ -6,4 +6,4 @@ models:
+-      - name: order_date
++      - name: order_dt
+"""
+    changes = parse_diff(diff, repo_root=str(tmp_path))
+    assert len(changes) == 1
+    # Not "schema", which is what the filename would imply.
+    assert changes[0].table == "orders"
+
+
 def test_describe_is_human_readable():
     diff = """\
 --- a/models/marts/orders.sql

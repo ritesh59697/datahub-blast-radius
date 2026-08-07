@@ -69,7 +69,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
             if args.diff != "-"
             else sys.stdin.read()
         )
-        changes = [c for c in parse_diff(diff_text) if c.breaking]
+        changes = [c for c in parse_diff(diff_text, repo_root=args.repo_root) if c.breaking]
         if not changes:
             print("No breaking column changes detected in diff.")
             return 0
@@ -137,6 +137,8 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--diff", help="path to a unified diff, or '-' for stdin")
     source.add_argument("--column", help="analyze one column directly, as TABLE.COLUMN")
 
+    analyze.add_argument("--repo-root", help="dbt project root, so schema.yml columns "
+                                             "resolve to the right model")
     analyze.add_argument("--dataset-urn", help="skip lookup and use this dataset URN")
     analyze.add_argument("--platform", help="restrict dataset lookup to a platform")
     analyze.add_argument("--gms", default="http://localhost:8080", help="DataHub GMS URL")
