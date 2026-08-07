@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Environment / secrets
+.env
+.env.*
+*.token
+
+# DataHub local state
+.datahub/
+datahub-quickstart/
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+
+# Demo recording scratch
+recordings/
+*.mov
